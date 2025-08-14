@@ -1,39 +1,36 @@
-
 import runpod
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
-import torch
+from sentence_transformers import CrossEncoder
 
 MODEL_NAME = "BAAI/bge-reranker-v2-gemma"
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME).to(device)
-model.eval()
+# Load model once at container start
+model = CrossEncoder(MODEL_NAME)
 
 def rerank(query, docs):
-    pairs = [[query, d] for d in docs]
-    inputs = tokenizer(pairs, padding=True, truncation=True, return_tensors="pt").to(device)
-    with torch.no_grad():
-        logits = model(**inputs, return_dict=True).logits.view(-1).float()
-    # Sort high-to-low
-    ranked = sorted(zip(docs, logits.tolist()), key=lambda x: x[1], reverse=True)
-    # return tidy structure
+    # Create query-doc pairs
+    pairs = [[query, doc] for doc in docs]
+    scores = model.predict(pairs)
+    # Sort by score descending
+    ranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
     return [{"document": d, "score": float(s)} for d, s in ranked]
 
 def handler(event):
-    '''
-    Input:
+    """
+    Expects input like:
     {
-        "query": "string",
-        "documents": ["doc1", "doc2", ...]
+        "query": "What is AI?",
+        "documents": ["AI is artificial intelligence.", "Bananas are yellow."]
     }
-    '''
+    """
     data = event.get("input", {}) or {}
     query = data.get("query")
     docs = data.get("documents", [])
+
     if not query or not isinstance(docs, list) or len(docs) == 0:
         return {"error": "Provide 'query' (str) and non-empty 'documents' (list[str])."}
 
     results = rerank(query, docs)
     return {"results": results}
 
+if __name__ == "__main__":
+    runpod.serverless.start({"handler": handler})

@@ -1,6 +1,5 @@
 runpod
-transformers>=4.41.0
-sentencepiece
+sentence-transformers
 accelerate
 # Install PyTorch CUDA wheels (works inside container even if the base is slim)
 torch --index-url https://download.pytorch.org/whl/cu121
